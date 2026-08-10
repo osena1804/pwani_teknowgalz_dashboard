@@ -1,4 +1,5 @@
 import io
+import numpy as np
 import pandas as pd
 
 # Mandatory columns required for KPI calculations
@@ -14,28 +15,91 @@ REQUIRED_COLUMNS = [
 ]
 
 
-def validate_schema(df: pd.DataFrame):
-  """Checks if the uploaded DataFrame contains all required columns.
+def clean_dataset(raw_df: pd.DataFrame) -> pd.DataFrame:
+  """General data cleaning pipeline that standardizes unformatted CSV datasets
 
-  Returns a tuple: (is_valid: bool, missing_columns: list)
+  before KPI processing.
   """
-  missing_cols = [col for col in REQUIRED_COLUMNS if col not in df.columns]
+  df = raw_df.copy()
+
+  # 1. Clean Column Headers (strip spaces)
+  df.columns = [str(col).strip() for col in df.columns]
+
+  # 2. Deduplication (exact row duplicates and duplicate application IDs)
+  df = df.drop_duplicates()
+  if 'application_id' in df.columns:
+    df['application_id'] = df['application_id'].astype(str).str.strip()
+    df = df.drop_duplicates(subset=['application_id'], keep='first')
+
+  # 3. Text & Categorical Cleaning
+  text_cols = [
+      'county',
+      'program',
+      'status',
+      'completion_status',
+      'reason_not_enrolled',
+      'Drop-off Stage',
+      'application_stage',
+  ]
+  for col in text_cols:
+    if col in df.columns:
+      df[col] = df[col].astype(str).str.strip()
+      df[col] = df[col].replace({'nan': np.nan, 'None': np.nan, '': np.nan})
+
+  if 'county' in df.columns:
+    df['county'] = df['county'].str.title()
+
+  if 'reason_not_enrolled' in df.columns:
+    df['reason_not_enrolled'] = df['reason_not_enrolled'].fillna('Not Specified')
+
+  # 4. Standardize Stage Flags ('Yes' / 'No')
+  stage_cols = ['Applied', 'Screened', 'Interviewed', 'Enrolled']
+  yes_values = {'yes', 'y', 'true', '1', 1, True}
+
+  for col in stage_cols:
+    if col in df.columns:
+      df[col] = df[col].apply(
+          lambda x: 'Yes' if str(x).strip().lower() in yes_values else 'No'
+      )
+
+  # 5. Coerce Data Types
+  if 'cohort_year' in df.columns:
+    df['cohort_year'] = (
+        pd.to_numeric(df['cohort_year'], errors='coerce').fillna(0).astype(int)
+    )
+
+  if 'age' in df.columns:
+    df['age'] = pd.to_numeric(df['age'], errors='coerce')
+
+  if 'application_date' in df.columns:
+    df['application_date'] = pd.to_datetime(
+        df['application_date'], errors='coerce'
+    )
+
+  return df
+
+
+def validate_schema(df: pd.DataFrame):
+  """Checks if the uploaded DataFrame contains all required columns."""
+  cleaned_cols = [str(col).strip() for col in df.columns]
+  missing_cols = [col for col in REQUIRED_COLUMNS if col not in cleaned_cols]
   if missing_cols:
     return False, missing_cols
   return True, []
 
 
 def process_dataset(df: pd.DataFrame, scenario_reduction_pct: float = 0.0):
-  """Processes the applicant DataFrame and returns calculated KPIs,
+  """Cleans incoming dataset automatically then processes applicant KPIs."""
+  # 1. Run Automated Data Cleaning
+  df = clean_dataset(df)
 
-  funnel metrics (with scenario adjustments), county stats, and program stats.
-  """
+  # 2. KPI Computations
   total_applicants = len(df)
   screened = len(df[df['Screened'] == 'Yes'])
   interviewed = len(df[df['Interviewed'] == 'Yes'])
   baseline_enrolled = len(df[df['Enrolled'] == 'Yes'])
 
-  # What-If Scenario Calculation: Reduce Interview Drop-off
+  # What-If Scenario Calculation
   interview_dropoff = interviewed - baseline_enrolled
   saved_candidates = int(
       round(interview_dropoff * (scenario_reduction_pct / 100.0))
@@ -49,10 +113,10 @@ def process_dataset(df: pd.DataFrame, scenario_reduction_pct: float = 0.0):
   scenario_reach_rate = (
       (scenario_enrolled / total_applicants * 100) if total_applicants > 0 else 0
   )
-  target_reach_rate = 50.0  # 2026 Target
+  target_reach_rate = 50.0  # 2026 Target Goal
   target_gap = target_reach_rate - scenario_reach_rate
 
-  # Stage-to-Stage Conversion Rates
+  # Stage Conversion Yields
   app_to_screening_rate = (
       (screened / total_applicants * 100) if total_applicants > 0 else 0
   )
@@ -80,7 +144,7 @@ def process_dataset(df: pd.DataFrame, scenario_reduction_pct: float = 0.0):
   )
   device_shortages = len(df[df['reason_not_enrolled'] == 'Device unavailable'])
 
-  # County summary table
+  # County summary
   county_df = (
       df.groupby('county')
       .agg(
@@ -102,7 +166,7 @@ def process_dataset(df: pd.DataFrame, scenario_reduction_pct: float = 0.0):
   )
   county_df = county_df.sort_values(by='Applied', ascending=False)
 
-  # Program summary table
+  # Program summary
   program_df = (
       df.groupby('program')
       .agg(
@@ -115,7 +179,6 @@ def process_dataset(df: pd.DataFrame, scenario_reduction_pct: float = 0.0):
       program_df['Enrolled'] / program_df['Applied']
   ) * 100
 
-  # Specific Unmet Demand Volume (Candidates turned away due to session capacity bounds)
   capacity_by_program = (
       df[df['reason_not_enrolled'] == 'Session full / capacity reached']
       .groupby('program')
@@ -128,7 +191,7 @@ def process_dataset(df: pd.DataFrame, scenario_reduction_pct: float = 0.0):
       by='Conversion_Rate_%', ascending=False
   )
 
-  # Reasons summary table
+  # Reasons summary
   reasons_df = (
       df[df['Enrolled'] == 'No']['reason_not_enrolled']
       .value_counts()
@@ -137,6 +200,7 @@ def process_dataset(df: pd.DataFrame, scenario_reduction_pct: float = 0.0):
   reasons_df.columns = ['Reason', 'Count']
 
   return {
+      'cleaned_df': df,
       'total_applicants': total_applicants,
       'screened': screened,
       'interviewed': interviewed,
