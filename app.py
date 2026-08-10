@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-from kpi_engine import export_to_excel, process_dataset, validate_schema
+from kpi_engine import export_to_excel, process_dataset, validate_schema, clean_dataset
 
 # Page Config
 st.set_page_config(
@@ -28,14 +28,15 @@ if uploaded_file is not None:
     st.error(f"Error reading uploaded CSV: {e}")
     st.stop()
 else:
-  try:
-    raw_df = pd.read_csv("data/pwani_teknowgalz_applicant_data_CORRECTED (1).csv")
-    st.sidebar.info("Using default local dataset.")
-  except Exception:
-    st.warning("Please upload a valid CSV dataset to get started.")
-    st.stop()
+  st.info(
+      "👈 **Welcome!** Please upload an applicant dataset (`.csv`) in the"
+      " sidebar to run the automated cleaning pipeline and render the KPI"
+      " dashboard."
+  )
+  st.stop()
 
-# Schema Check
+# Schema Check (on the raw upload, before cleaning -- so a wrong file gives
+# a clear column-name error instead of a confusing downstream crash)
 is_valid, missing_columns = validate_schema(raw_df)
 if not is_valid:
   st.error(
@@ -45,12 +46,18 @@ if not is_valid:
   )
   st.stop()
 
-# Sidebar - Filters
+# Clean ONCE, right after validation -- everything downstream (filters,
+# filtering itself, and KPI calculations) reads from this cleaned df, not
+# from raw_df. This is what prevents casing/whitespace/blank-value bugs
+# from ever reaching the filter widgets or the filtering logic.
+df = clean_dataset(raw_df)
+
+# Sidebar - Filters (built from the CLEANED data)
 st.sidebar.header("🔍 Filters")
-years = sorted(raw_df["cohort_year"].unique())
+years = sorted(df["cohort_year"].dropna().unique())
 selected_years = st.sidebar.multiselect("Cohort Year", years, default=years)
 
-counties = sorted(raw_df["county"].unique())
+counties = sorted(df["county"].dropna().unique())
 selected_counties = st.sidebar.multiselect("County", counties, default=counties)
 
 # Sidebar - Scenario Modeler
@@ -64,17 +71,21 @@ scenario_slider = st.sidebar.slider(
     help="Simulates saving candidates lost between interview and enrollment.",
 )
 
-# Filter Data
-filtered_df = raw_df[
-    (raw_df["cohort_year"].isin(selected_years))
-    & (raw_df["county"].isin(selected_counties))
+# Filter Data (on the CLEANED data, so "Mombasa" reliably matches every
+# row that belongs to Mombasa, regardless of how it was originally typed)
+filtered_df = df[
+    (df["cohort_year"].isin(selected_years))
+    & (df["county"].isin(selected_counties))
 ]
 
 if filtered_df.empty:
   st.warning("No data matches the selected filter criteria.")
   st.stop()
 
-# Process KPIs
+# Process KPIs (process_dataset re-runs clean_dataset internally -- a
+# harmless no-op here since filtered_df is already clean, but it means
+# this still works fine even if you call process_dataset elsewhere on
+# data that hasn't been pre-cleaned)
 kpi_data = process_dataset(filtered_df, scenario_reduction_pct=scenario_slider)
 
 # Display Banner if Scenario Active

@@ -25,10 +25,13 @@ def clean_dataset(raw_df: pd.DataFrame) -> pd.DataFrame:
   # 1. Clean Column Headers (strip spaces)
   df.columns = [str(col).strip() for col in df.columns]
 
-  # 2. Deduplication (exact row duplicates and duplicate application IDs)
+  # 2. Deduplication (drop rows with no application_id, exact row
+  # duplicates, and duplicate application IDs)
   df = df.drop_duplicates()
   if 'application_id' in df.columns:
+    df = df.dropna(subset=['application_id'])
     df['application_id'] = df['application_id'].astype(str).str.strip()
+    df = df[df['application_id'].str.lower() != 'nan']
     df = df.drop_duplicates(subset=['application_id'], keep='first')
 
   # 3. Text & Categorical Cleaning
@@ -46,8 +49,12 @@ def clean_dataset(raw_df: pd.DataFrame) -> pd.DataFrame:
       df[col] = df[col].astype(str).str.strip()
       df[col] = df[col].replace({'nan': np.nan, 'None': np.nan, '': np.nan})
 
-  if 'county' in df.columns:
-    df['county'] = df['county'].str.title()
+  # Title-case every categorical label column so casing variants
+  # ("codehack" / "CODEHACK" / "Codehack") don't fragment into separate
+  # groups downstream -- not just county, but program/status/stage too.
+  for col in ['county', 'program', 'status', 'application_stage']:
+    if col in df.columns:
+      df[col] = df[col].str.title()
 
   if 'reason_not_enrolled' in df.columns:
     df['reason_not_enrolled'] = df['reason_not_enrolled'].fillna('Not Specified')
@@ -69,7 +76,7 @@ def clean_dataset(raw_df: pd.DataFrame) -> pd.DataFrame:
     )
 
   if 'age' in df.columns:
-    df['age'] = pd.to_numeric(df['age'], errors='coerce')
+    df['age'] = df['age'].astype(str).str.extract(r'(\d+)').astype(float)
 
   if 'application_date' in df.columns:
     df['application_date'] = pd.to_datetime(
