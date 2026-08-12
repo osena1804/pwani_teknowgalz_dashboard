@@ -1,4 +1,5 @@
 import io
+import os
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -21,6 +22,9 @@ st.markdown(
 st.sidebar.header("📁 Data Ingestion")
 uploaded_file = st.sidebar.file_uploader("Upload Applicant CSV", type=["csv"])
 
+# Path to your default demo dataset inside the repository
+DEFAULT_DATASET_PATH = "pwani_teknowgalz_applicant_data_CORRECTED.csv"
+
 if uploaded_file is not None:
   try:
     raw_df = pd.read_csv(uploaded_file)
@@ -35,21 +39,7 @@ else:
   )
   st.stop()
 
-# Schema Check (on the raw upload, before cleaning -- so a wrong file gives
-# a clear column-name error instead of a confusing downstream crash)
-is_valid, missing_columns = validate_schema(raw_df)
-if not is_valid:
-  st.error(
-      "⚠️ **Invalid CSV Schema Detected!**\n\n"
-      f"The uploaded file is missing required header(s): `{', '.join(missing_columns)}`.\n\n"
-      "Please upload a standardized CSV dataset."
-  )
-  st.stop()
-
-# Clean ONCE, right after validation -- everything downstream (filters,
-# filtering itself, and KPI calculations) reads from this cleaned df, not
-# from raw_df. This is what prevents casing/whitespace/blank-value bugs
-# from ever reaching the filter widgets or the filtering logic.
+# Clean ONCE, right after validation
 df = clean_dataset(raw_df)
 
 # Sidebar - Filters (built from the CLEANED data)
@@ -71,30 +61,26 @@ scenario_slider = st.sidebar.slider(
     help="Simulates saving candidates lost between interview and enrollment.",
 )
 
-# Filter Data (on the CLEANED data, so "Mombasa" reliably matches every
-# row that belongs to Mombasa, regardless of how it was originally typed)
+# Filter Data (on the CLEANED data)
 filtered_df = df[
     (df["cohort_year"].isin(selected_years))
     & (df["county"].isin(selected_counties))
 ]
 
 if filtered_df.empty:
-  st.warning("No data matches the selected filter criteria.")
-  st.stop()
+    st.warning("No data matches the selected filter criteria.")
+    st.stop()
 
-# Process KPIs (process_dataset re-runs clean_dataset internally -- a
-# harmless no-op here since filtered_df is already clean, but it means
-# this still works fine even if you call process_dataset elsewhere on
-# data that hasn't been pre-cleaned)
+# Process KPIs
 kpi_data = process_dataset(filtered_df, scenario_reduction_pct=scenario_slider)
 
 # Display Banner if Scenario Active
 if scenario_slider > 0:
-  st.info(
-      f"⚡ **Scenario Active:** Reducing interview drop-off by **{scenario_slider}%** "
-      f"adds **+{kpi_data['saved_candidates']:,} enrolled students**, boosting overall reach from "
-      f"**{kpi_data['baseline_reach_rate']:.2f}%** to **{kpi_data['scenario_reach_rate']:.2f}%**."
-  )
+    st.info(
+        f"⚡ **Scenario Active:** Reducing interview drop-off by **{scenario_slider}%** "
+        f"adds **+{kpi_data['saved_candidates']:,} enrolled students**, boosting overall reach from "
+        f"**{kpi_data['baseline_reach_rate']:.2f}%** to **{kpi_data['scenario_reach_rate']:.2f}%**."
+    )
 
 # Top KPI Metric Cards
 col1, col2, col3, col4 = st.columns(4)
@@ -127,42 +113,42 @@ st.subheader("🔽 Applicant Progression Funnel & Step Conversion Rates")
 f_col1, f_col2 = st.columns([2, 1])
 
 with f_col1:
-  funnel_stages = ["Applied", "Screened", "Interviewed", "Enrolled"]
-  funnel_values = [
-      kpi_data["total_applicants"],
-      kpi_data["screened"],
-      kpi_data["interviewed"],
-      kpi_data["scenario_enrolled"],
-  ]
+    funnel_stages = ["Applied", "Screened", "Interviewed", "Enrolled"]
+    funnel_values = [
+        kpi_data["total_applicants"],
+        kpi_data["screened"],
+        kpi_data["interviewed"],
+        kpi_data["scenario_enrolled"],
+    ]
 
-  fig_funnel = go.Figure(
-      go.Funnel(
-          y=funnel_stages,
-          x=funnel_values,
-          textinfo="value+percent initial",
-          marker={
-              "color": ["#0F172A", "#334155", "#0D9488", "#10B981"],
-              "line": {"width": 2, "color": "#FFFFFF"},
-          },
-          connector={"line": {"color": "#CBD5E1", "width": 1}},
-      )
-  )
-  fig_funnel.update_layout(height=380, margin=dict(l=20, r=20, t=20, b=20))
-  st.plotly_chart(fig_funnel, use_container_width=True)
+    fig_funnel = go.Figure(
+        go.Funnel(
+            y=funnel_stages,
+            x=funnel_values,
+            textinfo="value+percent initial",
+            marker={
+                "color": ["#0F172A", "#334155", "#0D9488", "#10B981"],
+                "line": {"width": 2, "color": "#FFFFFF"},
+            },
+            connector={"line": {"color": "#CBD5E1", "width": 1}},
+        )
+    )
+    fig_funnel.update_layout(height=380, margin=dict(l=20, r=20, t=20, b=20))
+    st.plotly_chart(fig_funnel, use_container_width=True)
 
 with f_col2:
-  st.write("### Stage Yields")
-  st.metric(
-      "App → Screening Rate", f"{kpi_data['app_to_screening_rate']:.1f}%"
-  )
-  st.metric(
-      "Screening → Interview Rate",
-      f"{kpi_data['screening_to_interview_rate']:.1f}%",
-  )
-  st.metric(
-      "Interview → Enrollment Rate",
-      f"{kpi_data['interview_to_enrollment_rate']:.1f}%",
-  )
+    st.write("### Stage Yields")
+    st.metric(
+        "App → Screening Rate", f"{kpi_data['app_to_screening_rate']:.1f}%"
+    )
+    st.metric(
+        "Screening → Interview Rate",
+        f"{kpi_data['screening_to_interview_rate']:.1f}%",
+    )
+    st.metric(
+        "Interview → Enrollment Rate",
+        f"{kpi_data['interview_to_enrollment_rate']:.1f}%",
+    )
 
 st.divider()
 
@@ -172,54 +158,54 @@ tab1, tab2, tab3 = st.tabs(
 )
 
 with tab1:
-  st.write("### County Breakdown & Share Analysis")
-  fig_county = px.bar(
-      kpi_data["county_df"],
-      x="county",
-      y=["Applied_Share_pct", "Enrolled_Share_pct"],
-      barmode="group",
-      title="Application Share (%) vs. Enrollment Share (%) by County",
-      labels={"value": "Share (%)", "county": "County", "variable": "Metric"},
-      color_discrete_sequence=["#1E293B", "#0D9488"],
-  )
-  st.plotly_chart(fig_county, use_container_width=True)
-  st.dataframe(
-      kpi_data["county_df"].style.format({
-          "Reach_Rate_%": "{:.2f}%",
-          "Applied_Share_pct": "{:.2f}%",
-          "Enrolled_Share_pct": "{:.2f}%",
-      }),
-      use_container_width=True,
-  )
+    st.write("### County Breakdown & Share Analysis")
+    fig_county = px.bar(
+        kpi_data["county_df"],
+        x="county",
+        y=["Applied_Share_pct", "Enrolled_Share_pct"],
+        barmode="group",
+        title="Application Share (%) vs. Enrollment Share (%) by County",
+        labels={"value": "Share (%)", "county": "County", "variable": "Metric"},
+        color_discrete_sequence=["#1E293B", "#0D9488"],
+    )
+    st.plotly_chart(fig_county, use_container_width=True)
+    st.dataframe(
+        kpi_data["county_df"].style.format({
+            "Reach_Rate_%": "{:.2f}%",
+            "Applied_Share_pct": "{:.2f}%",
+            "Enrolled_Share_pct": "{:.2f}%",
+        }),
+        use_container_width=True,
+    )
 
 with tab2:
-  st.write("### Program Conversion Rate & Capacity Unmet Demand")
-  fig_prog = px.bar(
-      kpi_data["program_df"],
-      x="program",
-      y="Conversion_Rate_%",
-      title="Program Conversion Rate (%)",
-      labels={"Conversion_Rate_%": "Conversion Rate (%)", "program": "Program"},
-      color="Conversion_Rate_%",
-      color_continuous_scale="Viridis",
-  )
-  st.plotly_chart(fig_prog, use_container_width=True)
-  st.dataframe(
-      kpi_data["program_df"].style.format({"Conversion_Rate_%": "{:.2f}%"}),
-      use_container_width=True,
-  )
+    st.write("### Program Conversion Rate & Capacity Unmet Demand")
+    fig_prog = px.bar(
+        kpi_data["program_df"],
+        x="program",
+        y="Conversion_Rate_%",
+        title="Program Conversion Rate (%)",
+        labels={"Conversion_Rate_%": "Conversion Rate (%)", "program": "Program"},
+        color="Conversion_Rate_%",
+        color_continuous_scale="Viridis",
+    )
+    st.plotly_chart(fig_prog, use_container_width=True)
+    st.dataframe(
+        kpi_data["program_df"].style.format({"Conversion_Rate_%": "{:.2f}%"}),
+        use_container_width=True,
+    )
 
 with tab3:
-  st.write("### Primary Causes for Non-Enrollment")
-  fig_reasons = px.pie(
-      kpi_data["reasons_df"],
-      values="Count",
-      names="Reason",
-      title="Rejection Reason Distribution",
-      hole=0.4,
-      color_discrete_sequence=px.colors.qualitative.Set3,
-  )
-  st.plotly_chart(fig_reasons, use_container_width=True)
+    st.write("### Primary Causes for Non-Enrollment")
+    fig_reasons = px.pie(
+        kpi_data["reasons_df"],
+        values="Count",
+        names="Reason",
+        title="Rejection Reason Distribution",
+        hole=0.4,
+        color_discrete_sequence=px.colors.qualitative.Set3,
+    )
+    st.plotly_chart(fig_reasons, use_container_width=True)
 
 # Export Summary Reports
 st.divider()

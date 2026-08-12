@@ -3,3 +3,9 @@ __pycache__/
 *.pyc
 .DS_Store
 .streamlit/secrets.toml
+# Power BI User Settings & Cache
+*.UserData
+*.Settings
+*.tmp
+*.log
+~*
