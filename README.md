@@ -4,6 +4,8 @@ An interactive Streamlit dashboard that automatically cleans applicant data and 
 
 🚀 **Live Dashboard:** https://pwaniteknowgalzdashboard-pxewkjvurzdzojuw5jxq3w.streamlit.app/
 
+🚀 **Watch Demo** https://drive.google.com/file/d/1dzkVeeAqRFYsa7pJg2kl4lQeY1R7fK0j/view?usp=drivesdk
+
 ---
 
 ## What this does
@@ -124,7 +126,7 @@ git push
 | Deployed app is stuck on an old version | Streamlit Cloud caches by branch/commit | Push a new commit, or use "Reboot app" from the Streamlit Cloud dashboard |
 
 ### 5. Managing the app after deploy
-From [share.streamlit.io](https://share.streamlit.io) you can:
+From (https://share.streamlit.io) you can:
 - View logs if something breaks in production
 - Reboot the app manually
 - Change which branch/file it deploys from

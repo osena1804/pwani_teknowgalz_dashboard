@@ -32,12 +32,12 @@ if uploaded_file is not None:
     st.error(f"Error reading uploaded CSV: {e}")
     st.stop()
 else:
-  st.info(
-      "👈 **Welcome!** Please upload an applicant dataset (`.csv`) in the"
-      " sidebar to run the automated cleaning pipeline and render the KPI"
-      " dashboard."
-  )
-  st.stop()
+  try:
+    raw_df = pd.read_csv("data/pwani_teknowgalz_applicant_data_CORRECTED.csv")
+    st.sidebar.info("Using default local dataset.")
+  except Exception:
+    st.warning("Please upload a valid CSV dataset to get started.")
+    st.stop()
 
 # Clean ONCE, right after validation
 df = clean_dataset(raw_df)
